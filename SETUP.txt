@@ -1,0 +1,107 @@
+
+1. Create a bucket for the logs, if desired.
+   a. If you do this, grant write objects/read bucket permissions access to
+   the S3 log delivery group, via the permissions/access control list page.
+
+2. Create an S3 bucket
+
+   a. Pick a bucketname: example-com
+   b. Put it in appropriate region (I usually pick US West)
+   c. Turn on logging if desired (usually initially, at least)
+      i. example-com-logs (this bucket needs to already exist!)
+      ii. Prefix: logs/
+   d. Permissions - De-select all public ACL blocking
+   e. Create bucket
+   f. Properties -> Static web hosting -> Use this bucket to host a website
+      i. Add index.html and error.html as appropriate.
+
+3. Create an user and grant it access to the S3 bucket(s)
+
+   a. Go to the IAM page in the Amazon console
+   b. Pick a username (i.e. webdeploy-website-name-com)
+   c. Select "Programmatic access"
+   d. Nothing else will need to be set for now; the console will complain
+      about this; that's ok.
+   e. Save off the access and secret keys; you'll need them (obviously)
+   f. Add the following bucket policy to the bucket(s):
+
+{
+    "Version": "2012-10-17",
+    "Id": "Policy1493878247417",
+    "Statement": [
+        {
+            "Sid": "Stmt1493878232918",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::741820851363:user/CHANGE_TO_DEPLOY_USERNAME"
+            },
+            "Action": [
+                "s3:GetObject",
+                "s3:GetObjectAcl",
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::CHANGE_TO_WEBSITE_BUCKET_NAME/*"
+        },
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::741820851363:user/CHANGE_TO_DEPLOY_USERNAME"
+            },
+            "Action": [
+               "s3:ListBucket",
+               "s3:PutBucketWebsite"
+            ],
+            "Resource": "arn:aws:s3:::CHANGE_TO_WEBSITE_BUCKET_NAME"
+        }
+    ]
+}
+
+--
+      g. Go to the user's tab, and give them our custom-managed
+         "cloudfront-allow-invalidations" policy.
+
+4. Modify DNS via Route53
+
+   a. Create a TXT and SPF record for SPF data
+   b. Duplicate any A/CNAME/MX records
+   c. Point the domain's NS and SOA records at Route53
+
+5. Create an https certificate using Amazon Certificate Manager:
+
+   a. Go to: https://console.aws.amazon.com/acm/home?region=us-east-1
+   b. Add the relevant domain names.
+   c. DNS validation -> DNS
+   d. Confirm, and auto-create records in Route53
+   e. Let validation take place (may take 30 minutes)
+
+6. Create web-deploy config files.
+
+7. Upload the content to the S3 bucket - do this so the CloudFront
+   distribution you create below actually distributes the content.
+
+8. Create a CloudFront distribution
+
+   a. Create -> Web
+      i. Origin Domain name:
+      S3_BUCKET_NAME.s3-website-us-west-1.amazonaws.com; the origin ID
+      _SHOULD_ auto-populate.
+
+      ii. Cache behavior
+         - Redirect HTTP to HTTPS - Select
+         - Compress Objects Automatically - Yes.
+
+      iii. Distribution settings
+         - Set Price Class appropriately
+         - Set Alternate domains - NOTE: EVERY SINGLE DOMAIN MUST BE LISTED;
+           this includes www.example.com AND example.com (and any others)
+         - Custom SSL Certificate -> Pick the above certificate
+         - Turn logging on if you want; select the log S3 bucket, prefix
+           "cflogs"
+
+9. Re-point Route 53 DNS at CloudFront
+
+   Select the address record for the domain and any aliases (usually www),
+   toggle Alias to Yes, and select the CloudFront deployment from the
+   drop-down.

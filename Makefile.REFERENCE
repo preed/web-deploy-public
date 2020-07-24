@@ -1,0 +1,70 @@
+
+CP ?= cp
+FIND ?= find
+MKDIR ?= mkdir
+MV ?= mv
+RM ?= rm
+PHP ?= php
+
+ifneq (,$(VERBOSE))
+   V=-v
+   ECHO_CMD=
+else
+   V=
+   ECHO_CMD=@
+endif
+
+OUTPUT_DOCROOT ?= $(REPO_ROOT)/out
+SRC_DOCROOT ?= $(REPO_ROOT)/docroot
+
+PHP_CMD = $(PHP) \
+          --no-php-ini \
+          -d 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_STRICT' \
+          -d 'display_errors=stderr' \
+          $(NULL)
+
+# The second abspath call removes the trailing slash, which we need to make
+# find work the way we want.
+REPO_ROOT := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
+# Directories, $(NULL), individual files
+
+SRC_STATIC_ASSETS := $(shell cd $(SRC_DOCROOT) && $(FIND) . -type f -not -name '*.php')
+
+PUBLISHED_STATIC_ASSETS := $(foreach asset, $(SRC_STATIC_ASSETS), $(abspath $(OUTPUT_DOCROOT)/$(asset)))
+
+PREPROCESSED_PHP_FILES := $(shell cd $(SRC_DOCROOT) && $(FIND) . -type f -name '*.php')
+
+PREPROCESSED_PHP_OUTPUT := $(abspath $(addprefix $(OUTPUT_DOCROOT)/, $(PREPROCESSED_PHP_FILES:.php=.html)))
+
+all: $(PREPROCESSED_PHP_OUTPUT) \
+     $(PUBLISHED_STATIC_ASSETS) \
+     $(NULL)
+
+
+$(OUTPUT_DOCROOT)/%: $(SRC_DOCROOT)/%
+	@echo "Publishing static asset $(subst $(OUTPUT_DOCROOT)/,,$@)..."
+	$(ECHO_CMD)$(MKDIR) -p $V '$(strip $(dir $@))'
+	$(ECHO_CMD)$(RM) $V '$@'
+	$(ECHO_CMD)$(CP) -a $V '$(strip $(subst $(OUTPUT_DOCROOT), $(SRC_DOCROOT), $@))' '$@'
+
+define php_generate_asset
+	@echo "Processing $(subst $(REPO_ROOT)/,,$1)..."
+	$(ECHO_CMD)$(MKDIR) -p $V $(dir $2)
+	$(ECHO_CMD)SITE_DOCROOT=$(REPO_ROOT) $(PHP_CMD) $1 > $2.tmp
+	$(ECHO_CMD)$(MV) $V $2.tmp $2
+endef
+
+$(OUTPUT_DOCROOT)/%.html: $(SRC_DOCROOT)/%.php
+	$(call php_generate_asset,$<,$@)
+
+clean:
+	$(RM) -rf $V $(OUTPUT_DOCROOT) .dummy
+
+localweb:
+	@$(PHP_CMD) -S 127.0.0.1:8080 -t $(OUTPUT_DOCROOT)
+
+print-%:
+	@echo $* = $($*)
+
+.PHONY: all clean localweb print-%
